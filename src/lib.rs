@@ -9,6 +9,7 @@ use std::io::Write;
 use std::sync::mpsc::{self, SyncSender, Receiver};
 use std::time::{Duration, Instant};
 use std::thread;
+use std::sync::{Arc, Mutex};
 
 
 extern crate napi_derive;
@@ -38,15 +39,19 @@ struct WaveFormatStruct {
   direction: Direction,
   sender: SyncSender<Vec<u8>>,
   receiver: Receiver<Vec<u8>>,
+
+  mutex: Arc<Mutex<u32>>,
 }
 
+static mut REQUEST_RECV: usize = 1;
 
 #[napi]
 impl WaveFormatStruct {
   #[napi(constructor)]
   pub fn new(storebits: u32, validbits: u32, sample_type: u32, samplerate: u32, channels: u32) -> Self {
     let (sender, receiver) = mpsc::sync_channel(2);
-    WaveFormatStruct { storebits, validbits, sample_type, samplerate, channels, direction: Direction::Render, sender, receiver  }
+    let mutex = Arc::new(Mutex::new(0));
+    WaveFormatStruct { storebits, validbits, sample_type, samplerate, channels, direction: Direction::Render, sender, receiver, mutex }
   }
 
   #[napi]
@@ -58,8 +63,9 @@ impl WaveFormatStruct {
   #[napi]
   pub fn start<T: Fn(Buffer) -> Result<()>>(&mut self, callback: T) {
     let sender_clone = self.sender.clone();
+    let mutex_clone = Arc::clone(&self.mutex);
     let _handle = thread::spawn(move || {
-      let _result = WaveFormatStruct::capture_loop(sender_clone);
+      let _result = WaveFormatStruct::capture_loop(sender_clone, mutex_clone);
 
     });
     loop {
@@ -72,10 +78,14 @@ impl WaveFormatStruct {
               return ();
           }
       }
+      if *self.mutex.lock().unwrap() == 1 {
+        println!("stop capture");
+        return ();
+      }
     }
   }
 
-  fn capture_loop(tx_capt: std::sync::mpsc::SyncSender<Vec<u8>>) -> () {
+  fn capture_loop(tx_capt: SyncSender<Vec<u8>>, mutex: Arc<Mutex<u32>>) -> () {
     let chunksize = 128;
     let device = get_default_device(&Direction::Render).unwrap();
 
@@ -121,31 +131,24 @@ impl WaveFormatStruct {
             // outfile.write_all(&chunk).unwrap();
         }
         render_client.read_from_device_to_deque(&mut sample_queue).unwrap();
-        // if h_event.wait_for_event(3000).is_err() {
-        //     audio_client.stop_stream().unwrap();
-        //     break;
-        // }
-        // if self.status == 0 {
-        //   audio_client.stop_stream().unwrap();
-        //   break;
-        // }
-        if start_time.elapsed() >= Duration::from_secs(10) {
-            audio_client.stop_stream().unwrap();
-            break;
+
+        if *mutex.lock().unwrap() == 1 {
+          audio_client.stop_stream().unwrap();
+          break;
         }
     }
     return ()
   }
 
-  // #[napi]
-  // pub fn get_status(&self) -> u32 {
-  //   self.status
-  // }
+  #[napi]
+  pub fn get_status(&self) -> u32 {
+    *self.mutex.lock().unwrap()
+  }
 
-  // #[napi]
-  // pub fn set_status(&mut self, val: u32) {
-  //     self.status = val;
-  // }
+  #[napi]
+  pub fn set_status(&mut self, val: u32) {
+      *self.mutex.lock().unwrap() = val;
+  }
 
   #[napi]
   pub fn get_static() -> u32 {
