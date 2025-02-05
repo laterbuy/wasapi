@@ -6,7 +6,9 @@ use wasapi::*;
 use std::collections::VecDeque;
 use std::fs::File;
 use std::io::Write;
+use std::sync::mpsc::{self, SyncSender, Receiver};
 use std::time::{Duration, Instant};
+use std::thread;
 
 
 extern crate napi_derive;
@@ -34,7 +36,8 @@ struct WaveFormatStruct {
   channels: u32,
 
   direction: Direction,
-  status: u32,
+  sender: SyncSender<Vec<u8>>,
+  receiver: Receiver<Vec<u8>>,
 }
 
 
@@ -42,7 +45,8 @@ struct WaveFormatStruct {
 impl WaveFormatStruct {
   #[napi(constructor)]
   pub fn new(storebits: u32, validbits: u32, sample_type: u32, samplerate: u32, channels: u32) -> Self {
-    WaveFormatStruct { storebits, validbits, sample_type, samplerate, channels, direction: Direction::Render, status: 1   }
+    let (sender, receiver) = mpsc::sync_channel(2);
+    WaveFormatStruct { storebits, validbits, sample_type, samplerate, channels, direction: Direction::Render, sender, receiver  }
   }
 
   #[napi]
@@ -53,6 +57,25 @@ impl WaveFormatStruct {
 
   #[napi]
   pub fn start<T: Fn(Buffer) -> Result<()>>(&mut self, callback: T) {
+    let sender_clone = self.sender.clone();
+    let _handle = thread::spawn(move || {
+      let _result = WaveFormatStruct::capture_loop(sender_clone);
+
+    });
+    loop {
+      match self.receiver.recv() {
+          Ok(chunk) => {
+              callback(chunk.clone().into());
+          }
+          Err(err) => {
+              println!("Some error {}", err);
+              return ();
+          }
+      }
+    }
+  }
+
+  fn capture_loop(tx_capt: std::sync::mpsc::SyncSender<Vec<u8>>) -> () {
     let chunksize = 128;
     let device = get_default_device(&Direction::Render).unwrap();
 
@@ -94,7 +117,7 @@ impl WaveFormatStruct {
                 *element = sample_queue.pop_front().unwrap();
             }
             print!("chunk {:#?}, time {:#?}", chunk.len(), start_time.elapsed());
-            callback(chunk.clone().into());
+            tx_capt.send(chunk);
             // outfile.write_all(&chunk).unwrap();
         }
         render_client.read_from_device_to_deque(&mut sample_queue).unwrap();
@@ -102,10 +125,10 @@ impl WaveFormatStruct {
         //     audio_client.stop_stream().unwrap();
         //     break;
         // }
-        if self.status == 0 {
-          audio_client.stop_stream().unwrap();
-          break;
-        }
+        // if self.status == 0 {
+        //   audio_client.stop_stream().unwrap();
+        //   break;
+        // }
         if start_time.elapsed() >= Duration::from_secs(10) {
             audio_client.stop_stream().unwrap();
             break;
@@ -113,15 +136,16 @@ impl WaveFormatStruct {
     }
     return ()
   }
-  #[napi]
-  pub fn get_status(&self) -> u32 {
-    self.status
-  }
 
-  #[napi]
-  pub fn set_status(&mut self, val: u32) {
-      self.status = val;
-  }
+  // #[napi]
+  // pub fn get_status(&self) -> u32 {
+  //   self.status
+  // }
+
+  // #[napi]
+  // pub fn set_status(&mut self, val: u32) {
+  //     self.status = val;
+  // }
 
   #[napi]
   pub fn get_static() -> u32 {
