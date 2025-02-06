@@ -1,6 +1,6 @@
 {
-  "name": "@nova/wasapi",
-  "version": "0.0.2",
+  "name": "@houqwq/wasapi",
+  "version": "0.0.4",
   "main": "index.js",
   "types": "index.d.ts",
   "napi": {
