@@ -2,9 +2,9 @@
   "name": "@houqwq/wasapi",
   "repository": {
     "type": "git",
-    "url": "https://github.com/laterbuy/wasapi"
+    "url": "git+https://github.com/laterbuy/wasapi.git"
   },
-  "version": "0.0.8",
+  "version": "0.0.9",
   "main": "index.js",
   "types": "index.d.ts",
   "napi": {
