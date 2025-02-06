@@ -1,5 +1,9 @@
 {
   "name": "@houqwq/wasapi",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/laterbuy/wasapi"
+  },
   "version": "0.0.6",
   "main": "index.js",
   "types": "index.d.ts",
