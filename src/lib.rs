@@ -45,7 +45,6 @@ struct WaveFormatStruct {
   worker: Option<thread::JoinHandle<()>>,
 }
 
-static mut REQUEST_RECV: usize = 1;
 
 #[napi]
 impl WaveFormatStruct {
