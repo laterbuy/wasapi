@@ -2,7 +2,7 @@
   "name": "@houqwq/wasapi",
   "repository": {
     "type": "git",
-    "url": "https://github.com/laterbuy/wasapi"
+    "url": "git+https://github.com/laterbuy/wasapi.git"
   },
   "version": "0.0.8",
   "main": "index.js",
@@ -35,5 +35,8 @@
     "test": "ava",
     "universal": "napi universal",
     "version": "napi version"
+  },
+  "optionalDependencies": {
+    "@houqwq/wasapi-win32-x64-msvc": "0.0.8"
   }
 }
