@@ -10,6 +10,7 @@ a.init();
 a.start((val) => {
   // console.log("start", val);
 });
-// setTimeout(() => {
-//   a.setStatus(0);
-// }, 1000);
+setTimeout(() => {
+  console.log("stop");
+  a.stop();
+}, 1000);

@@ -12,9 +12,7 @@ export interface Device {
 export declare class WaveFormatStruct {
   constructor(storebits: number, validbits: number, sampleType: number, samplerate: number, channels: number)
   init(): void
-  start(callback: (arg0: Buffer) => void): void
-  getStatus(): number
-  setStatus(val: number): void
-  static getStatic(): number
+  start(callback: (...args: any[]) => any): void
+  stop(): void
   getDevice(): Device
 }

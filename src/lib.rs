@@ -1,12 +1,15 @@
 #![deny(clippy::all)]
 
+use napi::threadsafe_function::ThreadsafeFunction;
+use napi::threadsafe_function::ThreadsafeFunctionCallMode;
+
 use napi_derive::napi;
 use napi::bindgen_prelude::*;
 use wasapi::*;
 use std::collections::VecDeque;
 use std::fs::File;
 use std::io::Write;
-use std::sync::mpsc::{self, SyncSender, Receiver};
+use std::sync::mpsc::{self, SyncSender, Receiver, Sender};
 use std::time::{Duration, Instant};
 use std::thread;
 use std::sync::{Arc, Mutex};
@@ -37,10 +40,9 @@ struct WaveFormatStruct {
   channels: u32,
 
   direction: Direction,
-  sender: SyncSender<Vec<u8>>,
-  receiver: Receiver<Vec<u8>>,
 
-  mutex: Arc<Mutex<u32>>,
+  m_sender: Option<Sender<()>>,
+  worker: Option<thread::JoinHandle<()>>,
 }
 
 static mut REQUEST_RECV: usize = 1;
@@ -49,9 +51,7 @@ static mut REQUEST_RECV: usize = 1;
 impl WaveFormatStruct {
   #[napi(constructor)]
   pub fn new(storebits: u32, validbits: u32, sample_type: u32, samplerate: u32, channels: u32) -> Self {
-    let (sender, receiver) = mpsc::sync_channel(2);
-    let mutex = Arc::new(Mutex::new(0));
-    WaveFormatStruct { storebits, validbits, sample_type, samplerate, channels, direction: Direction::Render, sender, receiver, mutex }
+    WaveFormatStruct { storebits, validbits, sample_type, samplerate, channels, direction: Direction::Render, m_sender: None, worker: None  }
   }
 
   #[napi]
@@ -61,31 +61,22 @@ impl WaveFormatStruct {
   }
 
   #[napi]
-  pub fn start<T: Fn(Buffer) -> Result<()>>(&mut self, callback: T) {
-    let sender_clone = self.sender.clone();
-    let mutex_clone = Arc::clone(&self.mutex);
-    let _handle = thread::spawn(move || {
-      let _result = WaveFormatStruct::capture_loop(sender_clone, mutex_clone);
+  pub fn start(&mut self, callback: JsFunction) {
+    let (tx, rx) = mpsc::channel();
+    self.m_sender = Some(tx);
+    // 将 JS 回调转换为 `ThreadsafeFunction`，以便在子线程中调用
+    let callback_ref = callback.create_threadsafe_function(0, |ctx| {
+      let buffer: Vec<u8> = ctx.value;
+      Ok(buffer) // 直接返回 buffer，不要包一层 Vec<>
+    }).unwrap();
+    let handle = thread::spawn(move || {
+      let _result = WaveFormatStruct::capture_loop(rx, callback_ref);
 
     });
-    loop {
-      match self.receiver.recv() {
-          Ok(chunk) => {
-              callback(chunk.clone().into());
-          }
-          Err(err) => {
-              println!("Some error {}", err);
-              return ();
-          }
-      }
-      if *self.mutex.lock().unwrap() == 1 {
-        println!("stop capture");
-        return ();
-      }
-    }
+    self.worker = Some(handle);
   }
 
-  fn capture_loop(tx_capt: SyncSender<Vec<u8>>, mutex: Arc<Mutex<u32>>) -> () {
+  fn capture_loop( rx: Receiver<()>, callback: ThreadsafeFunction<Vec<u8>>) -> () {
     let chunksize = 128;
     let device = get_default_device(&Direction::Render).unwrap();
 
@@ -126,33 +117,35 @@ impl WaveFormatStruct {
             for element in chunk.iter_mut() {
                 *element = sample_queue.pop_front().unwrap();
             }
-            print!("chunk {:#?}, time {:#?}", chunk.len(), start_time.elapsed());
-            tx_capt.send(chunk);
+            // print!("chunk {:#?}, time {:#?}", chunk.len(), start_time.elapsed());
+            // tx_capt.send(chunk);
+            callback.call(Ok(chunk), ThreadsafeFunctionCallMode::NonBlocking);
             // outfile.write_all(&chunk).unwrap();
         }
         render_client.read_from_device_to_deque(&mut sample_queue).unwrap();
 
-        if *mutex.lock().unwrap() == 1 {
-          audio_client.stop_stream().unwrap();
-          break;
-        }
+        match rx.try_recv() {
+          Ok(_) | Err(mpsc::TryRecvError::Disconnected) => {
+              println!("Received stop signal. Exiting...");
+              break;
+          }
+          Err(mpsc::TryRecvError::Empty) => {}
+      }
     }
     return ()
   }
 
   #[napi]
-  pub fn get_status(&self) -> u32 {
-    *self.mutex.lock().unwrap()
-  }
-
-  #[napi]
-  pub fn set_status(&mut self, val: u32) {
-      *self.mutex.lock().unwrap() = val;
-  }
-
-  #[napi]
-  pub fn get_static() -> u32 {
-      2
+  pub fn stop(&mut self) {
+    println!("stop");
+    if let Some(tx) = self.m_sender.take() {
+      print!("tx Stopping...");
+      let _ = tx.send(());
+    }
+    if let Some(handle) = self.worker.take() {
+      println!("handle Stopping...");
+      handle.join().unwrap();
+    }
   }
 
   #[napi]
