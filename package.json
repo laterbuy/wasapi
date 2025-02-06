@@ -35,8 +35,5 @@
     "test": "ava",
     "universal": "napi universal",
     "version": "napi version"
-  },
-  "optionalDependencies": {
-    "@houqwq/wasapi-win32-x64-msvc": "0.0.8"
   }
 }
