@@ -1,5 +1,5 @@
 {
-  "name": "@nova/wasapi-win32-x64-msvc",
+  "name": "@houqwq/wasapi-win32-x64-msvc",
   "version": "0.0.5",
   "os": [
     "win32"

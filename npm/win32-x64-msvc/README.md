@@ -1,3 +1,3 @@
-# `@nova/wasapi-win32-x64-msvc`
+# `@houqwq/wasapi-win32-x64-msvc`
 
-This is the **x86_64-pc-windows-msvc** binary for `@nova/wasapi`
+This is the **x86_64-pc-windows-msvc** binary for `@houqwq/wasapi`
